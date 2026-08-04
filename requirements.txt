@@ -1,7 +1,4 @@
 Flask
 numpy
-pandas
 scikit-learn
 xgboost
-xgboost-cpu
-gunicorn
