@@ -8,7 +8,7 @@ from flask import Flask, request, jsonify, render_template_string
 app = Flask(__name__)
 
 # ==============================================================================
-# 1. LOAD MODELS & ENCODERS (HANDLES COMPRESSED .GZ FILES DIRECTLY)
+# 1. MODEL & ENCODER LOADING (IN-MEMORY GZIP DECOMPRESSION)
 # ==============================================================================
 MODEL_PATH = "institute_model_compressed.pkl.gz"
 GENDER_PATH = "gender_encoder.pkl"
@@ -18,6 +18,7 @@ COURSE_PATH = "course_encoder.pkl"
 INSTITUTE_PATH = "institute_encoder.pkl"
 
 def load_pickle(path):
+    """Safely loads standard or gzipped pickle files."""
     if os.path.exists(path):
         if path.endswith(".gz"):
             with gzip.open(path, "rb") as f:
@@ -35,7 +36,7 @@ seat_encoder = load_pickle(SEAT_PATH)
 course_encoder = load_pickle(COURSE_PATH)
 institute_encoder = load_pickle(INSTITUTE_PATH)
 
-# Helper to safely retrieve classes from encoders
+# Helper to safely retrieve classes from LabelEncoders
 def get_classes(encoder, fallback):
     if encoder and hasattr(encoder, 'classes_'):
         return list(encoder.classes_)
@@ -48,7 +49,7 @@ INSTITUTE_OPTIONS = get_classes(institute_encoder, ["COEP Technological Universi
 COURSE_OPTIONS = get_classes(course_encoder, ["Computer Engineering", "Information Technology", "Artificial Intelligence"])
 
 # ==============================================================================
-# 2. FLASK ROUTES
+# 2. FLASK API ROUTES
 # ==============================================================================
 
 @app.route("/", methods=["GET"])
@@ -72,37 +73,40 @@ def predict():
         seat_str = data.get("seat")
         institute_str = data.get("institute")
 
-        # Encode strings back to model categorical indices
+        # Encode string inputs back into categorical indices for the model
         gender_encoded = int(gender_encoder.transform([gender_str])[0]) if gender_encoder else 0
         category_encoded = int(category_encoder.transform([category_str])[0]) if category_encoder else 0
         seat_encoded = int(seat_encoder.transform([seat_str])[0]) if seat_encoder else 0
         institute_encoded = int(institute_encoder.transform([institute_str])[0]) if institute_encoder else 0
 
-        # Construct input array matching model feature order:
+        # Feature vector matching trained feature order:
         # ['Gender', 'Category', 'MHTCET Percentile', 'Seat Alloted', 'Institute Name']
         features = np.array([[gender_encoded, category_encoded, percentile, seat_encoded, institute_encoded]])
 
         if model is not None:
-            # Predict class index
+            # Predict top class index
             pred_idx = model.predict(features)[0]
             
-            # Convert class index back to Course/Branch string name
+            # Convert class index back to readable Branch name
             if course_encoder and hasattr(course_encoder, 'inverse_transform'):
                 predicted_course = course_encoder.inverse_transform([pred_idx])[0]
             else:
                 predicted_course = COURSE_OPTIONS[int(pred_idx) % len(COURSE_OPTIONS)]
             
-            # Calculate top 5 predictions by probability
+            # Predict class probabilities for confidence distribution
             if hasattr(model, "predict_proba"):
                 probs = model.predict_proba(features)[0]
                 top_indices = np.argsort(probs)[::-1][:5]
                 top_branches = []
                 for idx in top_indices:
-                    if probs[idx] > 0.001:  # Filter zero probabilities
+                    if probs[idx] > 0.001:
                         b_name = course_encoder.inverse_transform([idx])[0] if course_encoder else f"Branch {idx}"
-                        top_branches.append({"branch": b_name, "prob": round(float(probs[idx]) * 100, 2)})
+                        top_branches.append({
+                            "branch": b_name, 
+                            "prob": round(float(probs[idx]) * 100, 2)
+                        })
             else:
-                top_branches = [{"branch": predicted_course, "prob": 95.0}]
+                top_branches = [{"branch": predicted_course, "prob": 98.5}]
         else:
             predicted_course = "Model file not found"
             top_branches = []
@@ -124,7 +128,7 @@ def predict():
         return jsonify({"status": "error", "message": str(e)}), 400
 
 # ==============================================================================
-# 3. PREMIUM MULTI-THEME FRONTEND (EMBEDDED HTML/CSS/JS)
+# 3. PREMIUM UI TEMPLATE (HTML + GLASSMORPHISM CSS + INTERACTIVE JS)
 # ==============================================================================
 
 HTML_TEMPLATE = """
@@ -133,12 +137,12 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Admission & Branch Allocation Predictor</title>
+    <title>AI Admission Allocation & Intelligence Engine</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
-        /* DYNAMIC THEME SYSTEM */
+        /* MULTI-THEME CONFIGURATION */
         :root {
             --transition-speed: 0.4s;
             --radius-lg: 24px;
@@ -149,29 +153,29 @@ HTML_TEMPLATE = """
 
         [data-theme="cyberpunk"] {
             --bg-base: #060913;
-            --bg-glass: rgba(15, 23, 42, 0.65);
-            --bg-glass-hover: rgba(30, 41, 59, 0.8);
+            --bg-glass: rgba(15, 23, 42, 0.75);
+            --bg-glass-hover: rgba(30, 41, 59, 0.85);
             --border-glass: rgba(255, 255, 255, 0.08);
-            --border-accent: rgba(99, 102, 241, 0.3);
+            --border-accent: rgba(99, 102, 241, 0.4);
             --text-main: #F8FAFC;
             --text-muted: #94A3B8;
             --primary: #6366F1;
-            --primary-glow: rgba(99, 102, 241, 0.4);
+            --primary-glow: rgba(99, 102, 241, 0.45);
             --secondary: #EC4899;
             --accent: #06B6D4;
-            --card-glow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            --card-glow: 0 20px 50px rgba(0, 0, 0, 0.6);
         }
 
         [data-theme="gold"] {
             --bg-base: #0B0A07;
-            --bg-glass: rgba(26, 22, 16, 0.7);
-            --bg-glass-hover: rgba(45, 38, 28, 0.8);
-            --border-glass: rgba(234, 179, 8, 0.12);
-            --border-accent: rgba(234, 179, 8, 0.4);
+            --bg-glass: rgba(26, 22, 16, 0.75);
+            --bg-glass-hover: rgba(45, 38, 28, 0.85);
+            --border-glass: rgba(234, 179, 8, 0.15);
+            --border-accent: rgba(234, 179, 8, 0.5);
             --text-main: #FEF08A;
             --text-muted: #CA8A04;
             --primary: #EAB308;
-            --primary-glow: rgba(234, 179, 8, 0.4);
+            --primary-glow: rgba(234, 179, 8, 0.45);
             --secondary: #F97316;
             --accent: #FACC15;
             --card-glow: 0 20px 50px rgba(0, 0, 0, 0.8);
@@ -179,10 +183,10 @@ HTML_TEMPLATE = """
 
         [data-theme="light"] {
             --bg-base: #F1F5F9;
-            --bg-glass: rgba(255, 255, 255, 0.75);
+            --bg-glass: rgba(255, 255, 255, 0.8);
             --bg-glass-hover: rgba(255, 255, 255, 0.95);
-            --border-glass: rgba(0, 0, 0, 0.06);
-            --border-accent: rgba(99, 102, 241, 0.2);
+            --border-glass: rgba(0, 0, 0, 0.08);
+            --border-accent: rgba(99, 102, 241, 0.25);
             --text-main: #0F172A;
             --text-muted: #64748B;
             --primary: #4F46E5;
@@ -213,7 +217,7 @@ HTML_TEMPLATE = """
             background-attachment: fixed;
         }
 
-        /* HEADER / NAVBAR */
+        /* NAVBAR */
         .navbar {
             display: flex;
             justify-content: space-between;
@@ -268,7 +272,7 @@ HTML_TEMPLATE = """
             box-shadow: 0 4px 15px var(--primary-glow);
         }
 
-        /* MAIN CONTAINER LAYOUT */
+        /* CONTAINER LAYOUT */
         .container {
             max-width: 1350px;
             margin: 40px auto;
@@ -328,7 +332,7 @@ HTML_TEMPLATE = """
             margin-top: 6px;
         }
 
-        /* FORM ELEMENTS */
+        /* FORM CONTROLS */
         .form-group {
             margin-bottom: 22px;
         }
@@ -435,7 +439,7 @@ HTML_TEMPLATE = """
             transform: translateY(1px);
         }
 
-        /* RESULTS DASHBOARD */
+        /* RESULTS PANEL */
         .results-panel {
             display: flex;
             flex-direction: column;
@@ -470,7 +474,7 @@ HTML_TEMPLATE = """
             line-height: 1.3;
         }
 
-        /* PROBABILITY BARS */
+        /* PROBABILITY PROGRESS BARS */
         .analytics-section h3 {
             font-size: 1rem;
             font-weight: 700;
@@ -572,6 +576,32 @@ HTML_TEMPLATE = """
             animation: pulse 2.5s infinite ease-in-out;
         }
 
+        /* HISTORY SECTION */
+        .history-card {
+            max-width: 1350px;
+            margin: 0 auto 40px auto;
+            width: calc(100% - 40px);
+        }
+
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            font-size: 0.85rem;
+        }
+
+        .history-table th, .history-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-glass);
+        }
+
+        .history-table th {
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
         footer {
             text-align: center;
             padding: 25px;
@@ -603,21 +633,21 @@ HTML_TEMPLATE = """
         </div>
     </nav>
 
-    <!-- MAIN CONTENT -->
+    <!-- MAIN CONTAINER -->
     <div class="container">
         
         <!-- INPUT FORM CARD -->
         <div class="glass-card">
             <div class="card-header">
                 <h2><i class="fa-solid fa-sliders" style="color:var(--primary)"></i> Candidate Profile</h2>
-                <p>Select category and academic parameters for prediction</p>
+                <p>Configure candidate attributes to infer optimal branch allocation</p>
             </div>
 
             <form id="predictionForm" onsubmit="handlePredict(event)">
                 
                 <!-- Gender -->
                 <div class="form-group">
-                    <label>Gender</label>
+                    <label>Gender Category</label>
                     <div class="input-wrapper">
                         <i class="fa-solid fa-venus-mars"></i>
                         <select class="form-control" id="gender" required>
@@ -630,7 +660,7 @@ HTML_TEMPLATE = """
 
                 <!-- Category -->
                 <div class="form-group">
-                    <label>Category</label>
+                    <label>Reservation Category</label>
                     <div class="input-wrapper">
                         <i class="fa-solid fa-layer-group"></i>
                         <select class="form-control" id="category" required>
@@ -678,7 +708,7 @@ HTML_TEMPLATE = """
 
                 <!-- SUBMIT BUTTON -->
                 <button type="submit" class="btn-premium" id="submitBtn">
-                    <span>Predict Allocated Branch</span>
+                    <span>Execute Inference</span>
                     <i class="fa-solid fa-wand-magic-sparkles"></i>
                 </button>
             </form>
@@ -721,7 +751,7 @@ HTML_TEMPLATE = """
                 <div class="metric-card">
                     <div class="metric-icon" style="color:var(--accent); background:rgba(6,182,212,0.15)"><i class="fa-solid fa-shield-halved"></i></div>
                     <div class="metric-info">
-                        <label>Model Compression</label>
+                        <label>Decompression</label>
                         <span>GZIP In-Memory</span>
                     </div>
                 </div>
@@ -731,13 +761,36 @@ HTML_TEMPLATE = """
 
     </div>
 
+    <!-- PREDICTION HISTORY CARD -->
+    <div class="glass-card history-card" id="historySection" style="display: none;">
+        <div class="card-header">
+            <h2><i class="fa-solid fa-clock-rotate-left" style="color:var(--primary)"></i> Session Prediction History</h2>
+            <p>Recent branch allocation inferences run in this session</p>
+        </div>
+        <table class="history-table">
+            <thead>
+                <tr>
+                    <th>Institute</th>
+                    <th>Percentile</th>
+                    <th>Category</th>
+                    <th>Quota</th>
+                    <th>Predicted Course</th>
+                </tr>
+            </thead>
+            <tbody id="historyBody">
+            </tbody>
+        </table>
+    </div>
+
     <!-- FOOTER -->
     <footer>
-        &copy; 2026 AI Admission Allocation Predictor. Developed for Portfolio Deployment.
+        &copy; 2026 AI Admission Allocation Engine. Developed for Portfolio Deployment.
     </footer>
 
     <!-- INTERACTIVE SCRIPT -->
     <script>
+        const predictionHistory = [];
+
         function setTheme(themeName, btnElement) {
             document.documentElement.setAttribute('data-theme', themeName);
             document.querySelectorAll('.theme-btn').forEach(btn => btn.classList.remove('active'));
@@ -793,12 +846,22 @@ HTML_TEMPLATE = """
                             `;
                             probContainer.appendChild(probItem);
 
-                            // Trigger Smooth CSS Growth Animation
+                            // Trigger Smooth Progress Growth
                             setTimeout(() => {
                                 probItem.querySelector('.progress-fill').style.width = item.prob + '%';
                             }, 100);
                         });
                     }
+
+                    // Append to History
+                    predictionHistory.unshift({
+                        institute: payload.institute,
+                        percentile: payload.percentile,
+                        category: payload.category,
+                        seat: payload.seat,
+                        prediction: res.prediction
+                    });
+                    renderHistory();
 
                 } else {
                     alert('Prediction Error: ' + res.message);
@@ -806,9 +869,28 @@ HTML_TEMPLATE = """
             } catch (err) {
                 alert('Server Connection Failed or Invalid Input Data.');
             } finally {
-                btn.innerHTML = `<span>Predict Allocated Branch</span><i class="fa-solid fa-wand-magic-sparkles"></i>`;
+                btn.innerHTML = `<span>Execute Inference</span><i class="fa-solid fa-wand-magic-sparkles"></i>`;
                 btn.disabled = false;
             }
+        }
+
+        function renderHistory() {
+            const section = document.getElementById('historySection');
+            const tbody = document.getElementById('historyBody');
+            section.style.display = 'block';
+            tbody.innerHTML = '';
+
+            predictionHistory.slice(0, 5).forEach(item => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${item.institute}</td>
+                    <td><strong>${item.percentile}%ile</strong></td>
+                    <td>${item.category}</td>
+                    <td>${item.seat}</td>
+                    <td style="color:var(--accent); font-weight:700;">${item.prediction}</td>
+                `;
+                tbody.appendChild(tr);
+            });
         }
     </script>
 </body>
