@@ -1,4 +1,5 @@
 import os
+import gzip
 import pickle
 import numpy as np
 import pandas as pd
@@ -7,19 +8,23 @@ from flask import Flask, request, jsonify, render_template_string
 app = Flask(__name__)
 
 # ==============================================================================
-# 1. LOAD MODELS & ENCODERS
+# 1. LOAD MODELS & ENCODERS (HANDLES COMPRESSED .GZ FILES DIRECTLY)
 # ==============================================================================
-MODEL_PATH = "institute_model_compressed.pkl"
-GENDER_PATH = "Gender.pkl"
-CATEGORY_PATH = "Category.pkl"
-SEAT_PATH = "Seat Alloted.pkl"
-COURSE_PATH = "Course.pkl"
-INSTITUTE_PATH = "Institute Name.pkl"
+MODEL_PATH = "institute_model_compressed.pkl.gz"
+GENDER_PATH = "gender_encoder.pkl"
+CATEGORY_PATH = "category_encoder.pkl"
+SEAT_PATH = "seat_encoder.pkl"
+COURSE_PATH = "course_encoder.pkl"
+INSTITUTE_PATH = "institute_encoder.pkl"
 
 def load_pickle(path):
     if os.path.exists(path):
-        with open(path, "rb") as f:
-            return pickle.load(f)
+        if path.endswith(".gz"):
+            with gzip.open(path, "rb") as f:
+                return pickle.load(f)
+        else:
+            with open(path, "rb") as f:
+                return pickle.load(f)
     return None
 
 # Load model and encoders
@@ -30,7 +35,7 @@ seat_encoder = load_pickle(SEAT_PATH)
 course_encoder = load_pickle(COURSE_PATH)
 institute_encoder = load_pickle(INSTITUTE_PATH)
 
-# Helper to safely retrieve classes or fallback to defaults
+# Helper to safely retrieve classes from encoders
 def get_classes(encoder, fallback):
     if encoder and hasattr(encoder, 'classes_'):
         return list(encoder.classes_)
@@ -73,38 +78,34 @@ def predict():
         seat_encoded = int(seat_encoder.transform([seat_str])[0]) if seat_encoder else 0
         institute_encoded = int(institute_encoder.transform([institute_str])[0]) if institute_encoder else 0
 
-        # Construct input array for model
+        # Construct input array matching model feature order:
+        # ['Gender', 'Category', 'MHTCET Percentile', 'Seat Alloted', 'Institute Name']
         features = np.array([[gender_encoded, category_encoded, percentile, seat_encoded, institute_encoded]])
 
         if model is not None:
-            # Predict
+            # Predict class index
             pred_idx = model.predict(features)[0]
             
-            # Get course string representation
+            # Convert class index back to Course/Branch string name
             if course_encoder and hasattr(course_encoder, 'inverse_transform'):
                 predicted_course = course_encoder.inverse_transform([pred_idx])[0]
             else:
                 predicted_course = COURSE_OPTIONS[int(pred_idx) % len(COURSE_OPTIONS)]
             
-            # Predict Probabilities for Analytics
+            # Calculate top 5 predictions by probability
             if hasattr(model, "predict_proba"):
                 probs = model.predict_proba(features)[0]
                 top_indices = np.argsort(probs)[::-1][:5]
                 top_branches = []
                 for idx in top_indices:
-                    b_name = course_encoder.inverse_transform([idx])[0] if course_encoder else f"Branch {idx}"
-                    top_branches.append({"branch": b_name, "prob": round(float(probs[idx]) * 100, 2)})
+                    if probs[idx] > 0.001:  # Filter zero probabilities
+                        b_name = course_encoder.inverse_transform([idx])[0] if course_encoder else f"Branch {idx}"
+                        top_branches.append({"branch": b_name, "prob": round(float(probs[idx]) * 100, 2)})
             else:
                 top_branches = [{"branch": predicted_course, "prob": 95.0}]
         else:
-            # Fallback mock for UI presentation if model file is missing
-            predicted_course = "Computer Science and Engineering (Artificial Intelligence)"
-            top_branches = [
-                {"branch": "Computer Science and Engineering (Artificial Intelligence)", "prob": 88.5},
-                {"branch": "Information Technology", "prob": 7.2},
-                {"branch": "Computer Engineering", "prob": 3.1},
-                {"branch": "Electronics and Telecommunication Engg", "prob": 1.2}
-            ]
+            predicted_course = "Model file not found"
+            top_branches = []
 
         return jsonify({
             "status": "success",
@@ -123,7 +124,7 @@ def predict():
         return jsonify({"status": "error", "message": str(e)}), 400
 
 # ==============================================================================
-# 3. PREMIUM FRONTEND TEMPLATE (CSS + HTML + JS)
+# 3. PREMIUM MULTI-THEME FRONTEND (EMBEDDED HTML/CSS/JS)
 # ==============================================================================
 
 HTML_TEMPLATE = """
@@ -132,12 +133,12 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Admission & Allocation Predictor</title>
+    <title>AI Admission & Branch Allocation Predictor</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
-        /* CSS VARIABLES & MULTI-THEME CONFIGURATION */
+        /* DYNAMIC THEME SYSTEM */
         :root {
             --transition-speed: 0.4s;
             --radius-lg: 24px;
@@ -212,7 +213,7 @@ HTML_TEMPLATE = """
             background-attachment: fixed;
         }
 
-        /* NAVBAR */
+        /* HEADER / NAVBAR */
         .navbar {
             display: flex;
             justify-content: space-between;
@@ -267,7 +268,7 @@ HTML_TEMPLATE = """
             box-shadow: 0 4px 15px var(--primary-glow);
         }
 
-        /* MAIN LAYOUT */
+        /* MAIN CONTAINER LAYOUT */
         .container {
             max-width: 1350px;
             margin: 40px auto;
@@ -284,7 +285,7 @@ HTML_TEMPLATE = """
             }
         }
 
-        /* CARD STYLING */
+        /* GLASS CARD STYLING */
         .glass-card {
             background: var(--bg-glass);
             backdrop-filter: blur(20px);
@@ -327,7 +328,7 @@ HTML_TEMPLATE = """
             margin-top: 6px;
         }
 
-        /* FORM STYLING */
+        /* FORM ELEMENTS */
         .form-group {
             margin-bottom: 22px;
         }
@@ -386,7 +387,7 @@ HTML_TEMPLATE = """
             color: #FFF;
         }
 
-        /* PREMIUM ANIMATED BUTTON */
+        /* BUTTON ANIMATIONS */
         .btn-premium {
             width: 100%;
             padding: 16px;
@@ -434,7 +435,7 @@ HTML_TEMPLATE = """
             transform: translateY(1px);
         }
 
-        /* DASHBOARD & ANALYTICS STYLING */
+        /* RESULTS DASHBOARD */
         .results-panel {
             display: flex;
             flex-direction: column;
@@ -463,7 +464,7 @@ HTML_TEMPLATE = """
 
         .prediction-value {
             font-family: var(--font-heading);
-            font-size: 1.5rem;
+            font-size: 1.4rem;
             font-weight: 700;
             color: var(--text-main);
             line-height: 1.3;
@@ -520,7 +521,6 @@ HTML_TEMPLATE = """
             transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        /* BADGES METRICS */
         .metrics-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -562,18 +562,16 @@ HTML_TEMPLATE = """
             color: var(--text-main);
         }
 
-        /* PULSE / ANIMATION CLASSES */
         @keyframes pulse {
             0% { transform: scale(1); }
-            50% { transform: scale(1.03); }
+            50% { transform: scale(1.02); }
             100% { transform: scale(1); }
         }
 
         .pulse-animation {
-            animation: pulse 2s infinite ease-in-out;
+            animation: pulse 2.5s infinite ease-in-out;
         }
 
-        /* FOOTER */
         footer {
             text-align: center;
             padding: 25px;
@@ -593,33 +591,33 @@ HTML_TEMPLATE = """
             <span>EduPredict<span style="color:var(--secondary)">.AI</span></span>
         </div>
         <div class="theme-switcher">
-            <button class="theme-btn active" onclick="setTheme('cyberpunk')">
+            <button class="theme-btn active" onclick="setTheme('cyberpunk', this)">
                 <i class="fa-solid fa-bolt"></i> Cyber
             </button>
-            <button class="theme-btn" onclick="setTheme('gold')">
+            <button class="theme-btn" onclick="setTheme('gold', this)">
                 <i class="fa-solid fa-crown"></i> Luxe
             </button>
-            <button class="theme-btn" onclick="setTheme('light')">
+            <button class="theme-btn" onclick="setTheme('light', this)">
                 <i class="fa-solid fa-sun"></i> Light
             </button>
         </div>
     </nav>
 
-    <!-- MAIN CONTAINER -->
+    <!-- MAIN CONTENT -->
     <div class="container">
         
         <!-- INPUT FORM CARD -->
         <div class="glass-card">
             <div class="card-header">
-                <h2><i class="fa-solid fa-sliders" style="color:var(--primary)"></i> Admission Parameters</h2>
-                <p>Configure candidate attributes to infer optimal branch allocation</p>
+                <h2><i class="fa-solid fa-sliders" style="color:var(--primary)"></i> Candidate Profile</h2>
+                <p>Select category and academic parameters for prediction</p>
             </div>
 
             <form id="predictionForm" onsubmit="handlePredict(event)">
                 
                 <!-- Gender -->
                 <div class="form-group">
-                    <label>Gender Category</label>
+                    <label>Gender</label>
                     <div class="input-wrapper">
                         <i class="fa-solid fa-venus-mars"></i>
                         <select class="form-control" id="gender" required>
@@ -632,7 +630,7 @@ HTML_TEMPLATE = """
 
                 <!-- Category -->
                 <div class="form-group">
-                    <label>Reservation Category</label>
+                    <label>Category</label>
                     <div class="input-wrapper">
                         <i class="fa-solid fa-layer-group"></i>
                         <select class="form-control" id="category" required>
@@ -667,7 +665,7 @@ HTML_TEMPLATE = """
 
                 <!-- Institute Name -->
                 <div class="form-group">
-                    <label>Target Institute</label>
+                    <label>Target Institute Name</label>
                     <div class="input-wrapper">
                         <i class="fa-solid fa-building-columns"></i>
                         <select class="form-control" id="institute" required>
@@ -680,7 +678,7 @@ HTML_TEMPLATE = """
 
                 <!-- SUBMIT BUTTON -->
                 <button type="submit" class="btn-premium" id="submitBtn">
-                    <span>Execute Inference</span>
+                    <span>Predict Allocated Branch</span>
                     <i class="fa-solid fa-wand-magic-sparkles"></i>
                 </button>
             </form>
@@ -690,22 +688,22 @@ HTML_TEMPLATE = """
         <div class="glass-card results-panel">
             <div>
                 <div class="card-header">
-                    <h2><i class="fa-solid fa-chart-pie" style="color:var(--accent)"></i> Predictive Analytics</h2>
-                    <p>Real-time machine learning inference dashboard</p>
+                    <h2><i class="fa-solid fa-chart-pie" style="color:var(--accent)"></i> Allocation Dashboard</h2>
+                    <p>Machine learning classification results and confidence metrics</p>
                 </div>
 
                 <!-- PREDICTED HERO CARD -->
                 <div class="prediction-hero pulse-animation" id="predictionHero">
-                    <div class="prediction-title"><i class="fa-solid fa-award"></i> Optimal Allocated Branch</div>
-                    <div class="prediction-value" id="predictedBranch">Awaiting Input...</div>
+                    <div class="prediction-title"><i class="fa-solid fa-award"></i> Most Likely Allocated Course</div>
+                    <div class="prediction-value" id="predictedBranch">Awaiting Input Submission...</div>
                 </div>
 
                 <!-- PROBABILITY BREAKDOWN -->
                 <div class="analytics-section">
-                    <h3><i class="fa-solid fa-network-wire" style="color:var(--secondary)"></i> Confidence Distribution</h3>
+                    <h3><i class="fa-solid fa-network-wire" style="color:var(--secondary)"></i> Allocation Probability Top Matches</h3>
                     <div id="probContainer">
-                        <p style="color:var(--text-muted); font-size: 0.9rem; text-align:center; padding: 20px 0;">
-                            Submit parameters on the left to render confidence charts.
+                        <p style="color:var(--text-muted); font-size: 0.9rem; text-align:center; padding: 25px 0;">
+                            Submit candidate parameters to render likelihood charts.
                         </p>
                     </div>
                 </div>
@@ -716,15 +714,15 @@ HTML_TEMPLATE = """
                 <div class="metric-card">
                     <div class="metric-icon"><i class="fa-solid fa-microchip"></i></div>
                     <div class="metric-info">
-                        <label>Engine</label>
-                        <span>XGBoost Classifier</span>
+                        <label>ML Engine</label>
+                        <span>XGBoost Multi-Class</span>
                     </div>
                 </div>
                 <div class="metric-card">
                     <div class="metric-icon" style="color:var(--accent); background:rgba(6,182,212,0.15)"><i class="fa-solid fa-shield-halved"></i></div>
                     <div class="metric-info">
-                        <label>Model State</label>
-                        <span>Active / Validated</span>
+                        <label>Model Compression</label>
+                        <span>GZIP In-Memory</span>
                     </div>
                 </div>
             </div>
@@ -735,24 +733,22 @@ HTML_TEMPLATE = """
 
     <!-- FOOTER -->
     <footer>
-        &copy; 2026 EduPredict AI. Portfolio Deployment Deliverable.
+        &copy; 2026 AI Admission Allocation Predictor. Developed for Portfolio Deployment.
     </footer>
 
-    <!-- JS LOGIC -->
+    <!-- INTERACTIVE SCRIPT -->
     <script>
-        // Theme Switcher Logic
-        function setTheme(themeName) {
+        function setTheme(themeName, btnElement) {
             document.documentElement.setAttribute('data-theme', themeName);
             document.querySelectorAll('.theme-btn').forEach(btn => btn.classList.remove('active'));
-            event.currentTarget.classList.add('active');
+            btnElement.classList.add('active');
         }
 
-        // Handle Prediction Form Submission
         async function handlePredict(e) {
             e.preventDefault();
 
             const btn = document.getElementById('submitBtn');
-            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Processing...`;
+            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Processing Inference...`;
             btn.disabled = true;
 
             const payload = {
@@ -773,40 +769,44 @@ HTML_TEMPLATE = """
                 const res = await response.json();
 
                 if (res.status === 'success') {
-                    // Update Hero
+                    // Update main predicted branch
                     document.getElementById('predictedBranch').innerText = res.prediction;
 
-                    // Update Probabilities
+                    // Update Top 5 Probability Bars
                     const probContainer = document.getElementById('probContainer');
                     probContainer.innerHTML = '';
 
-                    res.top_branches.forEach(item => {
-                        const probItem = document.createElement('div');
-                        probItem.className = 'prob-item';
-                        probItem.innerHTML = `
-                            <div class="prob-header">
-                                <span class="prob-name" title="${item.branch}">${item.branch}</span>
-                                <span class="prob-val">${item.prob}%</span>
-                            </div>
-                            <div class="progress-bg">
-                                <div class="progress-fill" style="width: 0%"></div>
-                            </div>
-                        `;
-                        probContainer.appendChild(probItem);
+                    if (res.top_branches.length === 0) {
+                        probContainer.innerHTML = `<p style="color:var(--text-muted); font-size: 0.9rem; text-align:center;">No high-confidence branches predicted for this percentile.</p>`;
+                    } else {
+                        res.top_branches.forEach(item => {
+                            const probItem = document.createElement('div');
+                            probItem.className = 'prob-item';
+                            probItem.innerHTML = `
+                                <div class="prob-header">
+                                    <span class="prob-name" title="${item.branch}">${item.branch}</span>
+                                    <span class="prob-val">${item.prob}%</span>
+                                </div>
+                                <div class="progress-bg">
+                                    <div class="progress-fill" style="width: 0%"></div>
+                                </div>
+                            `;
+                            probContainer.appendChild(probItem);
 
-                        // Trigger animation
-                        setTimeout(() => {
-                            probItem.querySelector('.progress-fill').style.width = item.prob + '%';
-                        }, 100);
-                    });
+                            // Trigger Smooth CSS Growth Animation
+                            setTimeout(() => {
+                                probItem.querySelector('.progress-fill').style.width = item.prob + '%';
+                            }, 100);
+                        });
+                    }
 
                 } else {
-                    alert('Error: ' + res.message);
+                    alert('Prediction Error: ' + res.message);
                 }
             } catch (err) {
-                alert('Connection error or model evaluation failed.');
+                alert('Server Connection Failed or Invalid Input Data.');
             } finally {
-                btn.innerHTML = `<span>Execute Inference</span><i class="fa-solid fa-wand-magic-sparkles"></i>`;
+                btn.innerHTML = `<span>Predict Allocated Branch</span><i class="fa-solid fa-wand-magic-sparkles"></i>`;
                 btn.disabled = false;
             }
         }
