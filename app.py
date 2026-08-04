@@ -8,7 +8,7 @@ from flask import Flask, request, jsonify, render_template_string
 app = Flask(__name__)
 
 # ==============================================================================
-# 1. MODEL & ENCODER LOADING (IN-MEMORY GZIP DECOMPRESSION)
+# 1. LOAD MODEL & ENCODERS (DIRECT GZIP IN-MEMORY DECOMPRESSION)
 # ==============================================================================
 MODEL_PATH = "institute_model_compressed.pkl.gz"
 GENDER_PATH = "gender_encoder.pkl"
@@ -128,7 +128,7 @@ def predict():
         return jsonify({"status": "error", "message": str(e)}), 400
 
 # ==============================================================================
-# 3. PREMIUM UI TEMPLATE (HTML + GLASSMORPHISM CSS + INTERACTIVE JS)
+# 3. FRONTEND UI TEMPLATE (HTML + GLASSMORPHISM CSS + JS)
 # ==============================================================================
 
 HTML_TEMPLATE = """
@@ -142,7 +142,6 @@ HTML_TEMPLATE = """
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
-        /* MULTI-THEME CONFIGURATION */
         :root {
             --transition-speed: 0.4s;
             --radius-lg: 24px;
@@ -217,7 +216,6 @@ HTML_TEMPLATE = """
             background-attachment: fixed;
         }
 
-        /* NAVBAR */
         .navbar {
             display: flex;
             justify-content: space-between;
@@ -272,7 +270,6 @@ HTML_TEMPLATE = """
             box-shadow: 0 4px 15px var(--primary-glow);
         }
 
-        /* CONTAINER LAYOUT */
         .container {
             max-width: 1350px;
             margin: 40px auto;
@@ -289,7 +286,6 @@ HTML_TEMPLATE = """
             }
         }
 
-        /* GLASS CARD STYLING */
         .glass-card {
             background: var(--bg-glass);
             backdrop-filter: blur(20px);
@@ -332,7 +328,6 @@ HTML_TEMPLATE = """
             margin-top: 6px;
         }
 
-        /* FORM CONTROLS */
         .form-group {
             margin-bottom: 22px;
         }
@@ -391,7 +386,6 @@ HTML_TEMPLATE = """
             color: #FFF;
         }
 
-        /* BUTTON ANIMATIONS */
         .btn-premium {
             width: 100%;
             padding: 16px;
@@ -439,7 +433,6 @@ HTML_TEMPLATE = """
             transform: translateY(1px);
         }
 
-        /* RESULTS PANEL */
         .results-panel {
             display: flex;
             flex-direction: column;
@@ -474,7 +467,6 @@ HTML_TEMPLATE = """
             line-height: 1.3;
         }
 
-        /* PROBABILITY PROGRESS BARS */
         .analytics-section h3 {
             font-size: 1rem;
             font-weight: 700;
@@ -576,7 +568,6 @@ HTML_TEMPLATE = """
             animation: pulse 2.5s infinite ease-in-out;
         }
 
-        /* HISTORY SECTION */
         .history-card {
             max-width: 1350px;
             margin: 0 auto 40px auto;
@@ -751,8 +742,8 @@ HTML_TEMPLATE = """
                 <div class="metric-card">
                     <div class="metric-icon" style="color:var(--accent); background:rgba(6,182,212,0.15)"><i class="fa-solid fa-shield-halved"></i></div>
                     <div class="metric-info">
-                        <label>Decompression</label>
-                        <span>GZIP In-Memory</span>
+                        <label>Host Environment</label>
+                        <span>Hugging Face Docker</span>
                     </div>
                 </div>
             </div>
@@ -784,7 +775,7 @@ HTML_TEMPLATE = """
 
     <!-- FOOTER -->
     <footer>
-        &copy; 2026 AI Admission Allocation Engine. Developed for Portfolio Deployment.
+        &copy; 2026 AI Admission Allocation Engine. Deployed on Hugging Face Spaces.
     </footer>
 
     <!-- INTERACTIVE SCRIPT -->
@@ -822,10 +813,8 @@ HTML_TEMPLATE = """
                 const res = await response.json();
 
                 if (res.status === 'success') {
-                    // Update main predicted branch
                     document.getElementById('predictedBranch').innerText = res.prediction;
 
-                    // Update Top 5 Probability Bars
                     const probContainer = document.getElementById('probContainer');
                     probContainer.innerHTML = '';
 
@@ -846,14 +835,12 @@ HTML_TEMPLATE = """
                             `;
                             probContainer.appendChild(probItem);
 
-                            // Trigger Smooth Progress Growth
                             setTimeout(() => {
                                 probItem.querySelector('.progress-fill').style.width = item.prob + '%';
                             }, 100);
                         });
                     }
 
-                    // Append to History
                     predictionHistory.unshift({
                         institute: payload.institute,
                         percentile: payload.percentile,
@@ -901,4 +888,4 @@ HTML_TEMPLATE = """
 # 4. ENTRY POINT
 # ==============================================================================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=7860, debug=True)
