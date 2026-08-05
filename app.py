@@ -137,9 +137,9 @@ THEME_CONFIGS = {
 # Sidebar Theme Selector Switcher
 with st.sidebar:
     st.image("https://img.icons8.com/fluency/96/graduation-cap.png", width=64)
-    st.title("Theme Selector")
+    st.title("Theme Engine")
     selected_theme_name = st.selectbox(
-        "Choose Dashboard Theme", 
+        "Select Active Theme", 
         list(THEME_CONFIGS.keys()), 
         index=list(THEME_CONFIGS.keys()).index(st.session_state.current_theme)
     )
@@ -189,15 +189,6 @@ st.markdown(f"""
             color: {theme['text_main']};
             font-size: 1.8rem;
             font-weight: 800;
-        }}
-        .metric-pill {{
-            background: rgba(0,0,0,0.2);
-            border: 1px solid {theme['card_border']};
-            border-radius: 12px;
-            padding: 12px 18px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
         }}
         .stButton>button {{
             background: linear-gradient(135deg, {theme['primary']}, {theme['secondary']});
@@ -641,7 +632,7 @@ FALLBACK_INSTITUTES = [
 ]
 
 # ==============================================================================
-# 4. STREAMLIT CACHED MODEL LOADERS
+# 4. STREAMLIT CACHED MODEL LOADERS & SAFE ENCODING HELPERS
 # ==============================================================================
 
 INSTITUTE_MODEL_PATH = "institute_model_compressed.pkl.gz"
@@ -684,6 +675,29 @@ SEAT_OPTIONS = get_classes(seat_encoder, FALLBACK_SEATS)
 INSTITUTE_OPTIONS = get_classes(institute_encoder, FALLBACK_INSTITUTES)
 COURSE_OPTIONS = get_classes(course_encoder, FALLBACK_COURSES)
 
+# ==============================================================================
+# SAFE TRANSFORM & INVERSE TRANSFORM (PREVENTS "UNSEEN LABELS: [316]")
+# ==============================================================================
+
+def safe_transform(encoder, text_value, fallback_index=0):
+    """Safely encodes string values without throwing ValueError for unseen inputs."""
+    if encoder and hasattr(encoder, 'classes_'):
+        if text_value in encoder.classes_:
+            return int(encoder.transform([text_value])[0])
+    return fallback_index
+
+def safe_inverse_transform(encoder, pred_idx, fallback_list):
+    """Safely converts predicted integer indices back to branch names."""
+    pred_idx = int(pred_idx)
+    if encoder and hasattr(encoder, 'classes_'):
+        if pred_idx < len(encoder.classes_):
+            return encoder.classes_[pred_idx]
+    
+    # Safe fallback if predicted index exceeds saved encoder classes
+    if fallback_list and len(fallback_list) > 0:
+        return fallback_list[pred_idx % len(fallback_list)]
+    return f"Branch {pred_idx}"
+
 if 'history' not in st.session_state:
     st.session_state.history = []
 
@@ -724,22 +738,22 @@ with col2:
 
     if predict_btn:
         try:
-            gender_encoded = int(gender_encoder.transform([gender_input])[0]) if gender_encoder else 0
-            category_encoded = int(category_encoder.transform([category_input])[0]) if category_encoder else 0
-            seat_encoded = int(seat_encoder.transform([seat_input])[0]) if seat_encoder else 0
-            institute_encoded = int(institute_encoder.transform([institute_input])[0]) if institute_encoder else 0
+            # 1. Safely transform inputs to indices
+            gender_encoded = safe_transform(gender_encoder, gender_input, 0)
+            category_encoded = safe_transform(category_encoder, category_input, 0)
+            seat_encoded = safe_transform(seat_encoder, seat_input, 0)
+            institute_encoded = safe_transform(institute_encoder, institute_input, 0)
 
             features = np.array([[gender_encoded, category_encoded, percentile_input, seat_encoded, institute_encoded]])
 
+            # 2. Select active model
             active_model = institute_model if institute_model is not None else course_model
 
             if active_model is not None:
                 pred_idx = active_model.predict(features)[0]
 
-                if course_encoder and hasattr(course_encoder, 'inverse_transform'):
-                    predicted_course = course_encoder.inverse_transform([pred_idx])[0]
-                else:
-                    predicted_course = COURSE_OPTIONS[int(pred_idx) % len(COURSE_OPTIONS)]
+                # 3. Safely decode predicted index to branch string
+                predicted_course = safe_inverse_transform(course_encoder, pred_idx, COURSE_OPTIONS)
 
                 st.markdown(f"""
                     <div class="hero-prediction-box">
@@ -755,7 +769,7 @@ with col2:
                     st.markdown("#### Confidence Top Matches")
                     for idx in top_indices:
                         if probs[idx] > 0.001:
-                            b_name = course_encoder.inverse_transform([idx])[0] if course_encoder else f"Branch {idx}"
+                            b_name = safe_inverse_transform(course_encoder, idx, COURSE_OPTIONS)
                             prob_val = round(float(probs[idx]) * 100, 2)
                             st.write(f"**{b_name}**: `{prob_val}%`")
                             st.progress(float(probs[idx]))
