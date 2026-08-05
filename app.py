@@ -8,9 +8,11 @@ from flask import Flask, request, jsonify, render_template_string
 app = Flask(__name__)
 
 # ==============================================================================
-# 1. LOAD MODEL & ENCODERS (DIRECT GZIP IN-MEMORY DECOMPRESSION)
+# 1. LOAD ALL MODELS & ENCODERS (HANDLES BOTH PICKLE & GZIP FILES)
 # ==============================================================================
-MODEL_PATH = "institute_model_compressed.pkl.gz"
+INSTITUTE_MODEL_PATH = "institute_model_compressed.pkl.gz"
+COURSE_MODEL_PATH = "course_model.pkl"
+
 GENDER_PATH = "gender_encoder.pkl"
 CATEGORY_PATH = "category_encoder.pkl"
 SEAT_PATH = "seat_encoder.pkl"
@@ -28,8 +30,10 @@ def load_pickle(path):
                 return pickle.load(f)
     return None
 
-# Load model and encoders
-model = load_pickle(MODEL_PATH)
+# Load models and encoders
+institute_model = load_pickle(INSTITUTE_MODEL_PATH)
+course_model = load_pickle(COURSE_MODEL_PATH)
+
 gender_encoder = load_pickle(GENDER_PATH)
 category_encoder = load_pickle(CATEGORY_PATH)
 seat_encoder = load_pickle(SEAT_PATH)
@@ -73,29 +77,28 @@ def predict():
         seat_str = data.get("seat")
         institute_str = data.get("institute")
 
-        # Encode string inputs back into categorical indices for the model
+        # Encode string inputs into categorical indices
         gender_encoded = int(gender_encoder.transform([gender_str])[0]) if gender_encoder else 0
         category_encoded = int(category_encoder.transform([category_str])[0]) if category_encoder else 0
         seat_encoded = int(seat_encoder.transform([seat_str])[0]) if seat_encoder else 0
         institute_encoded = int(institute_encoder.transform([institute_str])[0]) if institute_encoder else 0
 
-        # Feature vector matching trained feature order:
-        # ['Gender', 'Category', 'MHTCET Percentile', 'Seat Alloted', 'Institute Name']
+        # Feature vector matching model's expected order
         features = np.array([[gender_encoded, category_encoded, percentile, seat_encoded, institute_encoded]])
 
-        if model is not None:
-            # Predict top class index
-            pred_idx = model.predict(features)[0]
+        # Select primary model (prefers institute_model, falls back to course_model)
+        active_model = institute_model if institute_model is not None else course_model
+
+        if active_model is not None:
+            pred_idx = active_model.predict(features)[0]
             
-            # Convert class index back to readable Branch name
             if course_encoder and hasattr(course_encoder, 'inverse_transform'):
                 predicted_course = course_encoder.inverse_transform([pred_idx])[0]
             else:
                 predicted_course = COURSE_OPTIONS[int(pred_idx) % len(COURSE_OPTIONS)]
             
-            # Predict class probabilities for confidence distribution
-            if hasattr(model, "predict_proba"):
-                probs = model.predict_proba(features)[0]
+            if hasattr(active_model, "predict_proba"):
+                probs = active_model.predict_proba(features)[0]
                 top_indices = np.argsort(probs)[::-1][:5]
                 top_branches = []
                 for idx in top_indices:
@@ -108,7 +111,7 @@ def predict():
             else:
                 top_branches = [{"branch": predicted_course, "prob": 98.5}]
         else:
-            predicted_course = "Model file not found"
+            predicted_course = "No model files loaded"
             top_branches = []
 
         return jsonify({
@@ -429,10 +432,6 @@ HTML_TEMPLATE = """
             transform: rotate(45deg) translateY(100%);
         }
 
-        .btn-premium:active {
-            transform: translateY(1px);
-        }
-
         .results-panel {
             display: flex;
             flex-direction: column;
@@ -636,7 +635,6 @@ HTML_TEMPLATE = """
 
             <form id="predictionForm" onsubmit="handlePredict(event)">
                 
-                <!-- Gender -->
                 <div class="form-group">
                     <label>Gender Category</label>
                     <div class="input-wrapper">
@@ -649,7 +647,6 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
-                <!-- Category -->
                 <div class="form-group">
                     <label>Reservation Category</label>
                     <div class="input-wrapper">
@@ -662,7 +659,6 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
-                <!-- MHTCET Percentile -->
                 <div class="form-group">
                     <label>MHTCET Percentile Score</label>
                     <div class="input-wrapper">
@@ -671,7 +667,6 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
-                <!-- Seat Alloted -->
                 <div class="form-group">
                     <label>Seat Allocation Quota</label>
                     <div class="input-wrapper">
@@ -684,7 +679,6 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
-                <!-- Institute Name -->
                 <div class="form-group">
                     <label>Target Institute Name</label>
                     <div class="input-wrapper">
@@ -697,7 +691,6 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
-                <!-- SUBMIT BUTTON -->
                 <button type="submit" class="btn-premium" id="submitBtn">
                     <span>Execute Inference</span>
                     <i class="fa-solid fa-wand-magic-sparkles"></i>
@@ -713,13 +706,11 @@ HTML_TEMPLATE = """
                     <p>Machine learning classification results and confidence metrics</p>
                 </div>
 
-                <!-- PREDICTED HERO CARD -->
                 <div class="prediction-hero pulse-animation" id="predictionHero">
                     <div class="prediction-title"><i class="fa-solid fa-award"></i> Most Likely Allocated Course</div>
                     <div class="prediction-value" id="predictedBranch">Awaiting Input Submission...</div>
                 </div>
 
-                <!-- PROBABILITY BREAKDOWN -->
                 <div class="analytics-section">
                     <h3><i class="fa-solid fa-network-wire" style="color:var(--secondary)"></i> Allocation Probability Top Matches</h3>
                     <div id="probContainer">
@@ -730,13 +721,12 @@ HTML_TEMPLATE = """
                 </div>
             </div>
 
-            <!-- METRICS SUMMARY -->
             <div class="metrics-grid">
                 <div class="metric-card">
                     <div class="metric-icon"><i class="fa-solid fa-microchip"></i></div>
                     <div class="metric-info">
                         <label>ML Engine</label>
-                        <span>XGBoost Multi-Class</span>
+                        <span>XGBoost Classifier</span>
                     </div>
                 </div>
                 <div class="metric-card">
@@ -752,7 +742,6 @@ HTML_TEMPLATE = """
 
     </div>
 
-    <!-- PREDICTION HISTORY CARD -->
     <div class="glass-card history-card" id="historySection" style="display: none;">
         <div class="card-header">
             <h2><i class="fa-solid fa-clock-rotate-left" style="color:var(--primary)"></i> Session Prediction History</h2>
@@ -773,12 +762,10 @@ HTML_TEMPLATE = """
         </table>
     </div>
 
-    <!-- FOOTER -->
     <footer>
         &copy; 2026 AI Admission Allocation Engine. Deployed on Hugging Face Spaces.
     </footer>
 
-    <!-- INTERACTIVE SCRIPT -->
     <script>
         const predictionHistory = [];
 
@@ -888,4 +875,5 @@ HTML_TEMPLATE = """
 # 4. ENTRY POINT
 # ==============================================================================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=7860, debug=True)
+    # Disable the Werkzeug reloader to prevent threading/signal errors
+    app.run(host="0.0.0.0", port=7860, debug=False, use_reloader=False)
