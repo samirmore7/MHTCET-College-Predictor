@@ -47,4 +47,4 @@ numpy==1.26.4
 pandas==2.2.0
 scikit-learn==1.6.1
 xgboost==2.0.3
-🌐 DeploymentThis application is configured for deployment on Streamlit Cloud:Push all files to your GitHub repository.Connect your repository to share.streamlit.io.Set the Main File Path to app.py.Deploy!
+🌐 DeploymentThis application is configured for deployment on Streamlit Cloud:Push all files to your GitHub repository.Connect your repository to share.streamlit.io.Set the Main File Path to app.py.Deploys!
