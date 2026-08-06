@@ -134,7 +134,7 @@ THEME_CONFIGS = {
     }
 }
 
-# Sidebar Theme Selector Switcher
+# Sidebar Theme Selector
 with st.sidebar:
     st.image("https://img.icons8.com/fluency/96/graduation-cap.png", width=64)
     st.title("Theme Engine")
@@ -147,7 +147,7 @@ with st.sidebar:
 
 theme = THEME_CONFIGS[st.session_state.current_theme]
 
-# Dynamic CSS Injection for Ultra-Glassmorphism UI
+# Dynamic CSS Injection for Glassmorphism UI
 st.markdown(f"""
     <style>
         .stApp {{
@@ -173,21 +173,21 @@ st.markdown(f"""
             border: 2px solid {theme['primary']};
             box-shadow: 0 0 25px {theme['glow']};
             border-radius: 18px;
-            padding: 25px;
+            padding: 20px;
             text-align: center;
-            margin-bottom: 25px;
+            margin-bottom: 20px;
         }}
         .prediction-title-text {{
             color: {theme['accent']};
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             text-transform: uppercase;
             letter-spacing: 2px;
             font-weight: 800;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
         }}
         .prediction-value-text {{
             color: {theme['text_main']};
-            font-size: 1.8rem;
+            font-size: 1.5rem;
             font-weight: 800;
         }}
         .stButton>button {{
@@ -675,38 +675,31 @@ SEAT_OPTIONS = get_classes(seat_encoder, FALLBACK_SEATS)
 INSTITUTE_OPTIONS = get_classes(institute_encoder, FALLBACK_INSTITUTES)
 COURSE_OPTIONS = get_classes(course_encoder, FALLBACK_COURSES)
 
-# ==============================================================================
-# SAFE TRANSFORM & INVERSE TRANSFORM (PREVENTS "UNSEEN LABELS: [316]")
-# ==============================================================================
-
+# Safe Encoders to Prevent Unseen Labels Error
 def safe_transform(encoder, text_value, fallback_index=0):
-    """Safely encodes string values without throwing ValueError for unseen inputs."""
     if encoder and hasattr(encoder, 'classes_'):
         if text_value in encoder.classes_:
             return int(encoder.transform([text_value])[0])
     return fallback_index
 
 def safe_inverse_transform(encoder, pred_idx, fallback_list):
-    """Safely converts predicted integer indices back to branch names."""
     pred_idx = int(pred_idx)
     if encoder and hasattr(encoder, 'classes_'):
         if pred_idx < len(encoder.classes_):
             return encoder.classes_[pred_idx]
-    
-    # Safe fallback if predicted index exceeds saved encoder classes
     if fallback_list and len(fallback_list) > 0:
         return fallback_list[pred_idx % len(fallback_list)]
-    return f"Branch {pred_idx}"
+    return f"Option {pred_idx}"
 
 if 'history' not in st.session_state:
     st.session_state.history = []
 
 # ==============================================================================
-# 5. UI LAYOUT & INTERACTION ENGINE
+# 5. UI LAYOUT & DUAL INFERENCE ENGINE
 # ==============================================================================
 
-st.markdown(f"<h1 style='color:{theme['primary']};'>🎓 EduPredict.AI Engine</h1>", unsafe_allow_html=True)
-st.caption("Next-Generation Machine Learning Platform for College & Engineering Branch Predictions")
+st.markdown(f"<h1 style='color:{theme['primary']};'>🎓 EduPredict.AI Dual Intelligence Engine</h1>", unsafe_allow_html=True)
+st.caption("Predict both Engineering College Allocations and Branch Options in one integrated workspace.")
 
 st.divider()
 
@@ -714,7 +707,7 @@ col1, col2 = st.columns([1, 1], gap="large")
 
 with col1:
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-    st.subheader("📋 Candidate Profile Parameters")
+    st.subheader("📋 Candidate Input Profile")
     
     gender_input = st.selectbox("Gender Category", GENDER_OPTIONS)
     category_input = st.selectbox("Reservation Category", CATEGORY_OPTIONS)
@@ -727,67 +720,100 @@ with col1:
         format="%.4f"
     )
     seat_input = st.selectbox("Seat Allocation Quota", SEAT_OPTIONS)
-    institute_input = st.selectbox("Target Institute Name", INSTITUTE_OPTIONS)
+    
+    st.markdown("---")
+    st.markdown("**Preferences for Dual Inference:**")
+    course_input = st.selectbox("Preferred Engineering Course (for College Prediction)", COURSE_OPTIONS)
+    institute_input = st.selectbox("Preferred Target Institute (for Branch Prediction)", INSTITUTE_OPTIONS)
 
-    predict_btn = st.button("Execute Intelligence Inference 🚀", type="primary", use_container_width=True)
+    predict_btn = st.button("Execute Dual Inference 🚀", type="primary", use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 with col2:
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-    st.subheader("📊 Allocation Intelligence Dashboard")
+    st.subheader("📊 Dual Allocation Predictions")
 
     if predict_btn:
         try:
-            # 1. Safely transform inputs to indices
+            # 1. Encode Inputs Safely
             gender_encoded = safe_transform(gender_encoder, gender_input, 0)
             category_encoded = safe_transform(category_encoder, category_input, 0)
             seat_encoded = safe_transform(seat_encoder, seat_input, 0)
             institute_encoded = safe_transform(institute_encoder, institute_input, 0)
+            course_encoded = safe_transform(course_encoder, course_input, 0)
 
-            features = np.array([[gender_encoded, category_encoded, percentile_input, seat_encoded, institute_encoded]])
+            # Feature Vectors
+            # Feature Vector for Course Model: [Gender, Category, Percentile, Seat, Institute]
+            features_course = np.array([[gender_encoded, category_encoded, percentile_input, seat_encoded, institute_encoded]])
+            
+            # Feature Vector for Institute Model: [Gender, Category, Percentile, Seat, Course]
+            features_inst = np.array([[gender_encoded, category_encoded, percentile_input, seat_encoded, course_encoded]])
 
-            # 2. Select active model
-            active_model = institute_model if institute_model is not None else course_model
-
-            if active_model is not None:
-                pred_idx = active_model.predict(features)[0]
-
-                # 3. Safely decode predicted index to branch string
-                predicted_course = safe_inverse_transform(course_encoder, pred_idx, COURSE_OPTIONS)
-
-                st.markdown(f"""
-                    <div class="hero-prediction-box">
-                        <div class="prediction-title-text">Most Likely Allocated Branch</div>
-                        <div class="prediction-value-text">{predicted_course}</div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-                if hasattr(active_model, "predict_proba"):
-                    probs = active_model.predict_proba(features)[0]
-                    top_indices = np.argsort(probs)[::-1][:5]
-
-                    st.markdown("#### Confidence Top Matches")
-                    for idx in top_indices:
-                        if probs[idx] > 0.001:
-                            b_name = safe_inverse_transform(course_encoder, idx, COURSE_OPTIONS)
-                            prob_val = round(float(probs[idx]) * 100, 2)
-                            st.write(f"**{b_name}**: `{prob_val}%`")
-                            st.progress(float(probs[idx]))
-
-                st.session_state.history.insert(0, {
-                    "Institute": institute_input,
-                    "Percentile": f"{percentile_input:.4f}%ile",
-                    "Category": category_input,
-                    "Quota": seat_input,
-                    "Predicted Branch": predicted_course
-                })
+            # --- PREDICTION 1: BRANCH ALLOCATION ---
+            if course_model is not None:
+                pred_course_idx = course_model.predict(features_course)[0]
+                predicted_course = safe_inverse_transform(course_encoder, pred_course_idx, COURSE_OPTIONS)
             else:
-                st.error("Model files not loaded in application directory.")
+                predicted_course = "Course Model Unavailable"
+
+            # --- PREDICTION 2: COLLEGE/INSTITUTE ALLOCATION ---
+            if institute_model is not None:
+                pred_inst_idx = institute_model.predict(features_inst)[0]
+                predicted_institute = safe_inverse_transform(institute_encoder, pred_inst_idx, INSTITUTE_OPTIONS)
+            else:
+                predicted_institute = "Institute Model Unavailable"
+
+            # Render Hero Prediction Cards
+            st.markdown(f"""
+                <div class="hero-prediction-box">
+                    <div class="prediction-title-text">🏫 Most Likely Allocated College</div>
+                    <div class="prediction-value-text">{predicted_institute}</div>
+                </div>
+                <div class="hero-prediction-box">
+                    <div class="prediction-title-text">📚 Most Likely Allocated Course</div>
+                    <div class="prediction-value-text">{predicted_course}</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # Probabilities for College Prediction
+            if institute_model is not None and hasattr(institute_model, "predict_proba"):
+                probs_inst = institute_model.predict_proba(features_inst)[0]
+                top_inst_indices = np.argsort(probs_inst)[::-1][:3]
+
+                st.markdown("#### 🏫 Top Likely Colleges")
+                for idx in top_inst_indices:
+                    if probs_inst[idx] > 0.001:
+                        i_name = safe_inverse_transform(institute_encoder, idx, INSTITUTE_OPTIONS)
+                        prob_val = round(float(probs_inst[idx]) * 100, 2)
+                        st.write(f"**{i_name}**: `{prob_val}%`")
+                        st.progress(float(probs_inst[idx]))
+
+            # Probabilities for Course Prediction
+            if course_model is not None and hasattr(course_model, "predict_proba"):
+                probs_course = course_model.predict_proba(features_course)[0]
+                top_course_indices = np.argsort(probs_course)[::-1][:3]
+
+                st.markdown("#### 📚 Top Likely Courses")
+                for idx in top_course_indices:
+                    if probs_course[idx] > 0.001:
+                        c_name = safe_inverse_transform(course_encoder, idx, COURSE_OPTIONS)
+                        prob_val = round(float(probs_course[idx]) * 100, 2)
+                        st.write(f"**{c_name}**: `{prob_val}%`")
+                        st.progress(float(probs_course[idx]))
+
+            # Store in Session History
+            st.session_state.history.insert(0, {
+                "Percentile": f"{percentile_input:.4f}%ile",
+                "Category": category_input,
+                "Quota": seat_input,
+                "Predicted College": predicted_institute,
+                "Predicted Branch": predicted_course
+            })
 
         except Exception as e:
             st.error(f"Inference Error: {str(e)}")
     else:
-        st.info("Configure parameters on the left and click **Execute Intelligence Inference** to display ML probability models.")
+        st.info("Fill out your candidate profile parameters on the left and click **Execute Dual Inference**.")
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ==============================================================================
